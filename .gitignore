@@ -21,6 +21,15 @@ Desktop.ini
 # Config (user-specific)
 .hermes-ui-control/
 
+# Legacy files (replaced by Python app)
+hermes.bat
+hermes.ps1
+start.bat
+stop.bat
+browser.bat
+status.bat
+install.bat
+
 # Temp
 *.tmp
 *.log
