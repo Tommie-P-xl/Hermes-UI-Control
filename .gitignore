@@ -1,0 +1,26 @@
+# Build artifacts
+build/
+dist/
+*.spec
+*.exe
+*.pyc
+__pycache__/
+
+# IDE
+.vscode/
+.idea/
+
+# OMC
+.omc/
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Config (user-specific)
+.hermes-ui-control/
+
+# Temp
+*.tmp
+*.log

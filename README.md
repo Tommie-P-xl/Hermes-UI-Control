@@ -1,70 +1,100 @@
-# hermes-control
+# Hermes UI Control
 
-Windows 快捷控制 [hermes-web-ui](https://github.com/EKKOLearnAI/hermes-web-ui) 的工具集。双击即可启动/停止服务，管理浏览器窗口，无需每次手动打开 WSL 输入命令。
+Windows 桌面管理工具，用于控制 [hermes-web-ui](https://github.com/EKKOLearnAI/hermes-web-ui)。通过系统托盘图标一键启动/停止服务，无需每次手动打开 WSL 输入命令。
+
+## 功能
+
+- 系统托盘常驻，右键菜单快速操作
+- 一键启动/停止/重启 hermes-web-ui 服务
+- 自动打开浏览器访问 Web UI
+- 开机自启动（仅启动管理软件，不启动 WSL）
+- 启动时自动开启服务
+- 弹窗通知（启动、停止、重启等关键事件）
+- 自动检查更新
+- 单实例保护，防止多开
+- 退出时自动关闭 WSL 和服务
 
 ## 前提条件
 
 - Windows 10/11 已安装 WSL2
 - WSL 中已安装 Node.js >= 23
+- WSL 中已安装 hermes-web-ui（`npm install -g hermes-web-ui`）
 
-## 快速开始
+## 安装
 
-将整个文件夹复制到电脑任意位置，双击 `install.bat` 即可。
+### 方式一：下载 EXE（推荐）
 
-安装脚本会自动：
-1. 检测你的 WSL 发行版
-2. 检测/安装 hermes-web-ui
-3. 将工具目录添加到系统 PATH
-4. 在桌面创建快捷方式
+从 [Releases](../../releases) 页面下载 `HermesUIControl.exe`，放到任意目录双击运行即可。
 
-## 使用方式
+### 方式二：从源码运行
 
-### 桌面快捷方式（推荐）
-
-安装后桌面会出现三个快捷方式：
-
-| 快捷方式 | 功能 |
-|----------|------|
-| **Hermes - Start** | 启动 hermes-web-ui 服务 + 自动打开浏览器 |
-| **Hermes - Stop** | 停止服务 + 关闭浏览器 + 关闭 WSL |
-| **Hermes - Browser** | 仅打开/聚焦浏览器窗口（服务保持运行） |
-
-### 命令行
-
-安装后在任意终端可直接使用：
-
-```powershell
-hermes start      # 启动服务并打开浏览器
-hermes stop       # 停止服务、关闭浏览器、关闭 WSL
-hermes browser    # 打开浏览器（服务已在后台运行时使用）
-hermes close      # 关闭浏览器窗口（不关服务）
-hermes restart    # 重启服务
-hermes status     # 查看运行状态
+```bash
+git clone https://github.com/YOUR_USERNAME/hermes-control.git
+cd hermes-control
+pip install -r requirements.txt
+python src/main.py
 ```
 
-### 典型使用场景
+### 方式三：自行打包
 
-1. **想用** → 双击 `Hermes - Start`，自动启动 WSL、服务、打开浏览器
-2. **暂时不想看页面** → 直接关掉浏览器标签页，服务继续在后台运行
-3. **想再看看页面** → 双击 `Hermes - Browser`，重新打开浏览器
-4. **彻底不用了** → 双击 `Hermes - Stop`，服务、浏览器、WSL 全部关闭
+```bash
+pip install -r requirements.txt
+build.bat
+```
 
-## 文件说明
+打包产物在 `dist/HermesUIControl.exe`。
 
-| 文件 | 作用 |
-|------|------|
-| `install.bat` | 一键安装脚本（首次使用时运行） |
-| `hermes.ps1` | 核心 PowerShell 脚本，自动检测 WSL 和 hermes-web-ui |
-| `hermes.bat` | 命令行万能入口 |
-| `start.bat` | 启动服务 + 打开浏览器 |
-| `stop.bat` | 停止服务 + 关闭浏览器 + 关闭 WSL |
-| `browser.bat` | 仅打开浏览器 |
-| `status.bat` | 查看运行状态 |
+## 使用
+
+双击 `HermesUIControl.exe` 启动后，系统托盘会出现图标。右键点击图标查看菜单：
+
+| 菜单项 | 功能 |
+|--------|------|
+| 启动服务 | 启动 WSL + hermes-web-ui + 打开浏览器 |
+| 停止服务 | 停止服务 + 关闭 WSL |
+| 重启服务 | 重启 hermes-web-ui |
+| 打开浏览器 | 仅打开/聚焦浏览器窗口 |
+| 开机自启动 | 注册/取消 Windows 开机启动 |
+| 启动时自动开启服务 | 开机自启时同时启动 hermes |
+| 弹窗通知 | 开启/关闭系统通知 |
+| 检查更新 | 检查 GitHub 最新版本 |
+| 退出 | 停止服务 + 关闭 WSL + 退出程序 |
+
+### 命令行参数
+
+```bash
+HermesUIControl.exe --minimize   # 最小化启动（开机自启用）
+HermesUIControl.exe --start      # 启动时自动开启服务
+```
+
+## 项目结构
+
+```
+src/
+├── main.py          # 入口：单实例锁 + 环境检查 + DPI 感知
+├── config.py        # 配置常量 + JSON 持久化设置
+├── wsl_manager.py   # WSL/hermes-web-ui 控制核心
+├── autostart.py     # Windows 注册表开机自启动
+├── updater.py       # GitHub Releases 自动更新
+├── tray.py          # 系统托盘菜单 + 状态轮询 + 通知
+├── icon.py          # 图标 base64 嵌入
+└── icon.ico         # 应用图标
+```
+
+## 更新日志
+
+### v1.0.0
+- 初始版本
+- 系统托盘管理界面
+- 开机自启动 / 自动开启服务
+- 弹窗通知
+- 自动更新检查
+- 退出时自动关闭 WSL
 
 ## 致谢
 
-- [hermes-web-ui](https://github.com/EKKOLearnAI/hermes-web-ui) — 由 [EKKOLearnAI](https://github.com/EKKOLearnAI) 开发的 Hermes Agent Web 管理界面
-- [Hermes Agent](https://github.com/NousResearch/hermes-agent) — 由 [NousResearch](https://github.com/NousResearch) 开发的 AI Agent
+- [hermes-web-ui](https://github.com/EKKOLearnAI/hermes-web-ui) — Hermes Agent Web 管理界面
+- [Hermes Agent](https://github.com/NousResearch/hermes-agent) — NousResearch AI Agent
 
 ## License
 
