@@ -10,8 +10,8 @@ HERMES_PORT = 8648
 HERMES_URL = f"http://localhost:{HERMES_PORT}"
 
 # GitHub repo for auto-update (release assets)
-GITHUB_OWNER = "EKKOLearnAI"
-GITHUB_REPO = "hermes-web-ui"
+GITHUB_OWNER = "Tommie-P-xl"
+GITHUB_REPO = "Hermes-UI-Control"
 UPDATE_CHECK_URL = f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/releases/latest"
 
 CONFIG_DIR = Path.home() / ".hermes-ui-control"
