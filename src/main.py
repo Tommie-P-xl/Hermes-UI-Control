@@ -50,17 +50,27 @@ def release_mutex():
 
 
 def check_environment() -> tuple[bool, str]:
-    """Verify WSL and hermes-web-ui are available."""
-    import wsl_manager
+    """Verify hermes-web-ui is available based on run mode."""
+    import config as app_config
 
-    if not wsl_manager.check_wsl():
-        return False, "WSL is not installed. Please install WSL first:\n  wsl --install"
+    run_mode = app_config.get("run_mode")
 
-    if not wsl_manager.check_hermes():
-        return False, (
-            "hermes-web-ui is not installed in WSL.\n"
-            "Install it with: npm install -g hermes-web-ui"
-        )
+    if run_mode == "windows":
+        import windows_manager
+        if not windows_manager.check_hermes():
+            return False, (
+                "hermes-web-ui is not installed on Windows.\n"
+                "Install it with: npm install -g hermes-web-ui"
+            )
+    else:
+        import wsl_manager
+        if not wsl_manager.check_wsl():
+            return False, "WSL is not installed. Please install WSL first:\n  wsl --install"
+        if not wsl_manager.check_hermes():
+            return False, (
+                "hermes-web-ui is not installed in WSL.\n"
+                "Install it with: npm install -g hermes-web-ui"
+            )
 
     return True, "OK"
 
@@ -108,8 +118,14 @@ def main():
         # If --start flag, auto-start service before tray
         if auto_start:
             log("Auto-starting service...")
-            import wsl_manager
-            threading.Thread(target=wsl_manager.start, daemon=True).start()
+            import config as app_config
+            run_mode = app_config.get("run_mode")
+            if run_mode == "windows":
+                import windows_manager
+                threading.Thread(target=windows_manager.start, daemon=True).start()
+            else:
+                import wsl_manager
+                threading.Thread(target=wsl_manager.start, daemon=True).start()
 
         log("Starting tray...")
         run_tray()

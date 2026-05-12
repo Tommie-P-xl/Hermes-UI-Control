@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 
 APP_NAME = "Hermes UI Control"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.1"
 APP_AUTHOR = "HermesControl"
 
 HERMES_PORT = 8648
@@ -23,6 +23,7 @@ DEFAULTS = {
     "auto_start_service": False,
     "notifications": True,
     "auto_update_check": True,
+    "run_mode": "wsl",  # "wsl" or "windows"
 }
 
 

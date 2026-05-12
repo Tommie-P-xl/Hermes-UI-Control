@@ -12,10 +12,20 @@ from PIL import Image, ImageDraw
 from config import APP_NAME, APP_VERSION, HERMES_URL
 from icon import get_icon_bytes
 from main import log
-import wsl_manager
 import autostart
 import updater
 import config as app_config
+
+
+def _get_manager():
+    """Get the appropriate manager based on run mode."""
+    run_mode = app_config.get("run_mode")
+    if run_mode == "windows":
+        import windows_manager
+        return windows_manager
+    else:
+        import wsl_manager
+        return wsl_manager
 
 _icon: pystray.Icon | None = None
 _status_state = "stopped"
@@ -59,33 +69,25 @@ def _notify(title: str, message: str):
         NIIF_NONE = 0x00000000
         NIIF_INFO = 0x00000001
 
-        # Use pystray's HWND if available
+        # Use pystray's HWND and uID to modify the existing icon
         hwnd = 0
+        uid = 0
         if _icon and hasattr(_icon, "_hwnd"):
             hwnd = _icon._hwnd
+        if _icon and hasattr(_icon, "_uid"):
+            uid = _icon._uid
 
         nid = NOTIFYICONDATA()
         nid.cbSize = ctypes.sizeof(NOTIFYICONDATA)
         nid.hWnd = hwnd
-        nid.uID = 1001  # Unique ID for our notification icon
-        nid.uFlags = NIF_ICON | NIF_TIP | NIF_INFO
-        nid.szTip = "Hermes UI Control"
+        nid.uID = uid
+        nid.uFlags = NIF_INFO
         nid.szInfoTitle = title[:63]
         nid.szInfo = message[:255]
         nid.dwInfoFlags = NIIF_INFO
 
-        # Load a standard icon
-        IDI_INFORMATION = 32516
-        nid.hIcon = ctypes.windll.user32.LoadIconW(0, IDI_INFORMATION)
-
-        # Add temporary icon with balloon, then delete
-        ctypes.windll.shell32.Shell_NotifyIconW(NIM_ADD, nid)
-
-        # Schedule removal after 5 seconds
-        def _remove():
-            ctypes.windll.shell32.Shell_NotifyIconW(NIM_DELETE, nid)
-
-        threading.Timer(5.0, _remove).start()
+        # Modify existing icon to show balloon notification (no extra icon created)
+        ctypes.windll.shell32.Shell_NotifyIconW(NIM_MODIFY, nid)
         log("Notify: Shell_NotifyIconW called")
     except Exception as e:
         log(f"Notify error: {type(e).__name__}: {e}")
@@ -124,7 +126,8 @@ def _update_icon_state():
 
     while _polling:
         try:
-            state = wsl_manager.get_status_icon_state()
+            manager = _get_manager()
+            state = manager.get_status_icon_state()
             if state != _status_state:
                 _status_state = state
                 if state == "running":
@@ -152,8 +155,9 @@ def _on_start(icon, item):
     def _do():
         global _status_state
         try:
-            log("Thread: calling wsl_manager.start()")
-            result = wsl_manager.start()
+            manager = _get_manager()
+            log("Thread: calling manager.start()")
+            result = manager.start()
             log(f"Thread: start() returned: {result}")
             _status_state = "running"
             _notify("Hermes UI Control", "服务已启动")
@@ -176,8 +180,9 @@ def _on_stop(icon, item):
     def _do():
         global _status_state
         try:
-            log("Thread: calling wsl_manager.stop()")
-            wsl_manager.stop()
+            manager = _get_manager()
+            log("Thread: calling manager.stop()")
+            manager.stop()
             log("Thread: stop() done")
             _notify("Hermes UI Control", "服务已停止")
         except Exception as e:
@@ -199,8 +204,9 @@ def _on_restart(icon, item):
     def _do():
         global _status_state
         try:
-            log("Thread: calling wsl_manager.restart()")
-            result = wsl_manager.restart()
+            manager = _get_manager()
+            log("Thread: calling manager.restart()")
+            result = manager.restart()
             log(f"Thread: restart() returned: {result}")
             _status_state = "running"
             _notify("Hermes UI Control", "服务已重启")
@@ -213,7 +219,8 @@ def _on_restart(icon, item):
 
 def _on_open_browser(icon, item):
     """Open browser to hermes URL."""
-    wsl_manager.open_browser()
+    manager = _get_manager()
+    manager.open_browser()
 
 
 def _on_toggle_autostart(icon, item):
@@ -242,6 +249,24 @@ def _on_toggle_notifications(icon, item):
     cfg = app_config.load_config()
     cfg["notifications"] = not cfg.get("notifications", True)
     app_config.save_config(cfg)
+    _refresh_menu()
+
+
+def _on_switch_to_wsl(icon, item):
+    """Switch to WSL mode."""
+    cfg = app_config.load_config()
+    cfg["run_mode"] = "wsl"
+    app_config.save_config(cfg)
+    _notify("Hermes UI Control", "已切换到 WSL 模式")
+    _refresh_menu()
+
+
+def _on_switch_to_windows(icon, item):
+    """Switch to Windows native mode."""
+    cfg = app_config.load_config()
+    cfg["run_mode"] = "windows"
+    app_config.save_config(cfg)
+    _notify("Hermes UI Control", "已切换到 Windows 模式")
     _refresh_menu()
 
 
@@ -275,15 +300,16 @@ def _on_do_update(icon, item):
 
 
 def _on_quit(icon, item):
-    """Quit the application — also stop WSL and services."""
+    """Quit the application — also stop services."""
     global _polling
     log("Menu: Quit clicked, stopping services...")
     _polling = False
 
-    # Stop hermes and WSL before exiting
+    # Stop hermes before exiting
     def _cleanup():
         try:
-            wsl_manager.stop()
+            manager = _get_manager()
+            manager.stop()
             log("Cleanup: services stopped")
         except Exception as e:
             log(f"Cleanup error: {e}")
@@ -297,6 +323,7 @@ def _build_menu():
     cfg = app_config.load_config()
     is_running = _status_state == "running"
     is_starting = _status_state == "starting"
+    run_mode = cfg.get("run_mode", "wsl")
 
     items = [
         pystray.MenuItem("启动服务", _on_start, enabled=not is_running and not is_starting),
@@ -304,6 +331,14 @@ def _build_menu():
         pystray.MenuItem("重启服务", _on_restart, enabled=is_running),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("打开浏览器", _on_open_browser, enabled=is_running),
+        pystray.Menu.SEPARATOR,
+        pystray.MenuItem(
+            "运行模式",
+            pystray.Menu(
+                pystray.MenuItem("WSL 模式", _on_switch_to_wsl, checked=lambda item: app_config.load_config().get("run_mode", "wsl") == "wsl"),
+                pystray.MenuItem("Windows 模式", _on_switch_to_windows, checked=lambda item: app_config.load_config().get("run_mode", "wsl") == "windows"),
+            )
+        ),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("开机自启动", _on_toggle_autostart, checked=lambda item: app_config.load_config().get("autostart", False)),
         pystray.MenuItem("启动时自动开启服务", _on_toggle_auto_service, checked=lambda item: app_config.load_config().get("auto_start_service", False)),
@@ -344,6 +379,7 @@ def run_tray():
 
     cfg = app_config.load_config()
     if cfg.get("auto_start_service"):
-        threading.Thread(target=wsl_manager.start, daemon=True).start()
+        manager = _get_manager()
+        threading.Thread(target=manager.start, daemon=True).start()
 
     _icon.run()

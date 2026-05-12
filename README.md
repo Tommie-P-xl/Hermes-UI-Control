@@ -1,24 +1,31 @@
 # Hermes UI Control
 
-Windows 桌面管理工具，用于控制 [hermes-web-ui](https://github.com/EKKOLearnAI/hermes-web-ui)。通过系统托盘图标一键启动/停止服务，无需每次手动打开 WSL 输入命令。
+Windows 桌面管理工具，用于控制 [hermes-web-ui](https://github.com/EKKOLearnAI/hermes-web-ui)。通过系统托盘图标一键启动/停止服务，支持 WSL 和 Windows 原生两种运行模式。
 
 ## 功能
 
 - 系统托盘常驻，右键菜单快速操作
 - 一键启动/停止/重启 hermes-web-ui 服务
 - 自动打开浏览器访问 Web UI
-- 开机自启动（仅启动管理软件，不启动 WSL）
+- 支持 WSL 和 Windows 原生两种运行模式
+- 开机自启动（仅启动管理软件）
 - 启动时自动开启服务
 - 弹窗通知（启动、停止、重启等关键事件）
 - 自动检查更新
 - 单实例保护，防止多开
-- 退出时自动关闭 WSL 和服务
+- 退出时自动关闭服务
 
 ## 前提条件
 
+### WSL 模式
 - Windows 10/11 已安装 WSL2
 - WSL 中已安装 Node.js >= 23
 - WSL 中已安装 hermes-web-ui（`npm install -g hermes-web-ui`）
+
+### Windows 模式
+- Windows 10/11
+- 已安装 Node.js >= 23
+- 已安装 hermes-web-ui（`npm install -g hermes-web-ui`）
 
 ## 安装
 
@@ -29,8 +36,8 @@ Windows 桌面管理工具，用于控制 [hermes-web-ui](https://github.com/EKK
 ### 方式二：从源码运行
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/hermes-control.git
-cd hermes-control
+git clone https://github.com/Tommie-P-xl/Hermes-UI-Control.git
+cd Hermes-UI-Control
 pip install -r requirements.txt
 python src/main.py
 ```
@@ -50,15 +57,23 @@ build.bat
 
 | 菜单项 | 功能 |
 |--------|------|
-| 启动服务 | 启动 WSL + hermes-web-ui + 打开浏览器 |
-| 停止服务 | 停止服务 + 关闭 WSL |
+| 启动服务 | 启动 hermes-web-ui + 打开浏览器 |
+| 停止服务 | 停止 hermes-web-ui 服务 |
 | 重启服务 | 重启 hermes-web-ui |
 | 打开浏览器 | 仅打开/聚焦浏览器窗口 |
+| 运行模式 | 切换 WSL/Windows 运行模式 |
 | 开机自启动 | 注册/取消 Windows 开机启动 |
 | 启动时自动开启服务 | 开机自启时同时启动 hermes |
 | 弹窗通知 | 开启/关闭系统通知 |
 | 检查更新 | 检查 GitHub 最新版本 |
-| 退出 | 停止服务 + 关闭 WSL + 退出程序 |
+| 退出 | 停止服务 + 退出程序 |
+
+### 运行模式说明
+
+- **WSL 模式**：在 WSL 中运行 hermes-web-ui，适合已配置好 WSL 环境的用户
+- **Windows 模式**：在 Windows 原生环境运行 hermes-web-ui，适合直接在 Windows 上安装的用户
+
+首次运行时默认使用 WSL 模式，可通过右键菜单"运行模式"切换。
 
 ### 命令行参数
 
@@ -71,17 +86,24 @@ HermesUIControl.exe --start      # 启动时自动开启服务
 
 ```
 src/
-├── main.py          # 入口：单实例锁 + 环境检查 + DPI 感知
-├── config.py        # 配置常量 + JSON 持久化设置
-├── wsl_manager.py   # WSL/hermes-web-ui 控制核心
-├── autostart.py     # Windows 注册表开机自启动
-├── updater.py       # GitHub Releases 自动更新
-├── tray.py          # 系统托盘菜单 + 状态轮询 + 通知
-├── icon.py          # 图标 base64 嵌入
-└── icon.ico         # 应用图标
+├── main.py            # 入口：单实例锁 + 环境检查 + DPI 感知
+├── config.py          # 配置常量 + JSON 持久化设置
+├── wsl_manager.py     # WSL/hermes-web-ui 控制核心
+├── windows_manager.py # Windows 原生 hermes-web-ui 控制
+├── autostart.py       # Windows 注册表开机自启动
+├── updater.py         # GitHub Releases 自动更新
+├── tray.py            # 系统托盘菜单 + 状态轮询 + 通知
+├── icon.py            # 图标 base64 嵌入
+└── icon.ico           # 应用图标
 ```
 
 ## 更新日志
+
+### v1.0.1
+- 新增 Windows 原生运行模式支持
+- 支持 WSL 和 Windows 两种运行模式切换
+- 右键菜单添加"运行模式"选项
+- 修复系统通知时托盘图标重复显示的问题
 
 ### v1.0.0
 - 初始版本
