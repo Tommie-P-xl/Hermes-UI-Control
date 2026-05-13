@@ -48,6 +48,8 @@ def check_for_update() -> dict | None:
 
 def perform_update(download_url: str) -> bool:
     """Download new version and replace current exe via a batch script."""
+    if not download_url:
+        return False
     if not getattr(sys, "frozen", False):
         return False  # Can only self-update packaged exe
 
@@ -57,9 +59,9 @@ def perform_update(download_url: str) -> bool:
     new_exe = Path(temp_dir) / "HermesUIControl_new.exe"
 
     try:
-        # Download
+        # Download (follow redirects for GitHub release assets)
         req = urllib.request.Request(download_url, headers={"User-Agent": "HermesUIControl"})
-        with urllib.request.urlopen(req, timeout=120) as resp:
+        with urllib.request.urlopen(req, timeout=300) as resp:
             with open(new_exe, "wb") as f:
                 f.write(resp.read())
 

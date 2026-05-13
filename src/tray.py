@@ -291,11 +291,18 @@ def _on_do_update(icon, item):
     """Perform the update."""
     global _update_info
     if _update_info and _update_info.get("url"):
-        success = updater.perform_update(_update_info["url"])
+        _notify("Hermes UI Control", f"正在下载更新 {_update_info['version']}...")
+        try:
+            success = updater.perform_update(_update_info["url"])
+        except Exception as e:
+            log(f"Update error: {type(e).__name__}: {e}")
+            success = False
         if success:
             icon.stop()
         else:
             _update_info = None
+            _refresh_menu()
+            _notify("Hermes UI Control", "更新失败，正在打开下载页面...")
             webbrowser.open(f"https://github.com/{app_config.GITHUB_OWNER}/{app_config.GITHUB_REPO}/releases/latest")
 
 
