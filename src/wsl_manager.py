@@ -122,14 +122,12 @@ def start() -> str:
     for i in range(15):
         if is_port_open():
             _server_running = True
-            log(f"start() port open after {i}s, opening browser")
-            open_browser()
+            log(f"start() port open after {i}s")
             return "Hermes Web UI started successfully."
         time.sleep(1)
 
     _server_running = True
-    log("start() port not open after 15s, opening browser anyway")
-    open_browser()
+    log("start() port not open after 15s")
     return "Hermes Web UI started (waiting for ready state)."
 
 
@@ -159,11 +157,9 @@ hermes-web-ui restart --port {HERMES_PORT}
 
     for _ in range(15):
         if is_port_open():
-            open_browser()
             return "Hermes Web UI restarted."
         time.sleep(1)
 
-    open_browser()
     return "Hermes Web UI restart initiated."
 
 
