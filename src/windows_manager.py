@@ -172,45 +172,8 @@ def status() -> tuple[bool, str]:
 
 
 def open_browser():
-    """Open or focus the default browser to hermes URL."""
-    browsers = ["msedge", "chrome", "firefox", "brave"]
-    found = False
-
-    try:
-        ps_script = f"""
-$procs = Get-Process -Name {','.join(browsers)} -ErrorAction SilentlyContinue |
-    Where-Object {{ $_.MainWindowTitle -match 'localhost:{HERMES_PORT}|hermes' }}
-if ($procs) {{
-    Add-Type @"
-using System;
-using System.Runtime.InteropServices;
-public class Win32Focus {{
-    [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
-    [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
-}}
-"@
-    foreach ($p in $procs) {{
-        if ($p.MainWindowHandle -ne [IntPtr]::Zero) {{
-            [Win32Focus]::ShowWindow($p.MainWindowHandle, 9)
-            [Win32Focus]::SetForegroundWindow($p.MainWindowHandle)
-        }}
-    }}
-    Write-Output "FOCUSED"
-}} else {{
-    Write-Output "NOT_FOUND"
-}}
-"""
-        result = subprocess.run(
-            ["powershell", "-ExecutionPolicy", "Bypass", "-Command", ps_script],
-            capture_output=True, text=True, timeout=5,
-            creationflags=subprocess.CREATE_NO_WINDOW,
-        )
-        found = "FOCUSED" in result.stdout
-    except Exception:
-        pass
-
-    if not found:
-        webbrowser.open(HERMES_URL)
+    """Open the default browser to hermes URL. Always opens a new tab."""
+    webbrowser.open_new_tab(HERMES_URL)
 
 
 def get_status_icon_state() -> str:

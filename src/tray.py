@@ -159,8 +159,13 @@ def _on_start(icon, item):
             log("Thread: calling manager.start()")
             result = manager.start()
             log(f"Thread: start() returned: {result}")
-            _status_state = "running"
-            _notify("Hermes UI Control", "服务已启动")
+            # Verify actual port state instead of blindly assuming success
+            if manager.is_port_open():
+                _status_state = "running"
+                _notify("Hermes UI Control", "服务已启动")
+            else:
+                _status_state = "stopped"
+                _notify("Hermes UI Control", "启动超时，服务可能未就绪")
         except Exception as e:
             log(f"Thread: start() error: {type(e).__name__}: {e}")
             _status_state = "stopped"
@@ -208,10 +213,16 @@ def _on_restart(icon, item):
             log("Thread: calling manager.restart()")
             result = manager.restart()
             log(f"Thread: restart() returned: {result}")
-            _status_state = "running"
-            _notify("Hermes UI Control", "服务已重启")
+            # Verify actual port state instead of blindly assuming success
+            if manager.is_port_open():
+                _status_state = "running"
+                _notify("Hermes UI Control", "服务已重启")
+            else:
+                _status_state = "stopped"
+                _notify("Hermes UI Control", "重启超时，服务可能未就绪")
         except Exception as e:
             log(f"Thread: restart() error: {type(e).__name__}: {e}")
+            _status_state = "stopped"
         _refresh_menu()
 
     threading.Thread(target=_do, daemon=True).start()
