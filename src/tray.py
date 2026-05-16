@@ -32,8 +32,38 @@ def _is_system_dark_mode() -> bool:
         return False
 
 
-def _apply_dark_mode_to_menu(hwnd):
-    """Apply dark mode to a popup menu window using DWM API."""
+# Preferred app mode constants for uxtheme
+_APPEARANCE_LIGHT = 0
+_APPEARANCE_DARK = 1
+_APPEARANCE_FOLLOW_SYSTEM = 2
+
+_uxtheme = ctypes.windll.uxtheme
+# SetPreferredAppMode — ordinal 135 (Windows 10 1903+)
+_SetPreferredAppMode = getattr(_uxtheme, 135)
+# FlushMenuThemes — ordinal 136 (Windows 10 1903+)
+_FlushMenuThemes = getattr(_uxtheme, 136)
+
+
+def _enable_dark_mode_menus():
+    """Enable dark mode for popup menus via uxtheme undocumented APIs."""
+    try:
+        _SetPreferredAppMode(_APPEARANCE_DARK)
+        _FlushMenuThemes()
+    except Exception:
+        pass
+
+
+def _disable_dark_mode_menus():
+    """Restore system-default menu theming."""
+    try:
+        _SetPreferredAppMode(_APPEARANCE_FOLLOW_SYSTEM)
+        _FlushMenuThemes()
+    except Exception:
+        pass
+
+
+def _apply_dark_mode_to_hwnd(hwnd):
+    """Apply immersive dark mode to a window via DWM API."""
     try:
         DWMWA_USE_IMMERSIVE_DARK_MODE = 20
         ctypes.windll.dwmapi.DwmSetWindowAttribute(
@@ -42,18 +72,6 @@ def _apply_dark_mode_to_menu(hwnd):
             ctypes.byref(ctypes.c_int(1)),
             ctypes.sizeof(ctypes.c_int),
         )
-    except Exception:
-        pass
-
-
-def _apply_menu_theme():
-    """Apply system theme to the current popup menu."""
-    if not _is_system_dark_mode():
-        return
-    try:
-        hwnd = ctypes.windll.user32.GetForegroundWindow()
-        if hwnd:
-            _apply_dark_mode_to_menu(hwnd)
     except Exception:
         pass
 
@@ -418,22 +436,45 @@ def _build_menu():
     return pystray.Menu(*items)
 
 
+WM_RBUTTONUP = 0x0205
+
+
 def _patch_menu_for_dark_mode(icon):
-    """Patch the icon to apply dark mode to menus when shown."""
+    """Patch the icon to apply dark mode to popup menus.
+
+    Strategy:
+    1. Use uxtheme SetPreferredAppMode to enable dark menus at app level
+    2. Apply DWM dark mode to the menu owner window
+    3. Re-apply before each right-click menu show
+    """
     if not _is_system_dark_mode():
         return
 
     try:
         impl = icon._impl
-        if hasattr(impl, '_show_menu'):
-            original_show = impl._show_menu
 
-            def _dark_show_menu(*args, **kwargs):
-                result = original_show(*args, **kwargs)
-                threading.Timer(0.01, _apply_menu_theme).start()
-                return result
+        # Enable dark mode for menus globally
+        _enable_dark_mode_menus()
 
-            impl._show_menu = _dark_show_menu
+        # Apply DWM dark mode to the icon windows
+        if hasattr(impl, '_hwnd') and impl._hwnd:
+            _apply_dark_mode_to_hwnd(impl._hwnd)
+        if hasattr(impl, '_menu_hwnd') and impl._menu_hwnd:
+            _apply_dark_mode_to_hwnd(impl._menu_hwnd)
+
+        # Hook _on_notify to ensure dark mode is applied before each menu show
+        if hasattr(impl, '_on_notify'):
+            original_on_notify = impl._on_notify
+
+            def _dark_on_notify(wparam, lparam):
+                if lparam == WM_RBUTTONUP:
+                    _enable_dark_mode_menus()
+                    if impl._menu_hwnd:
+                        _apply_dark_mode_to_hwnd(impl._menu_hwnd)
+                return original_on_notify(wparam, lparam)
+
+            impl._on_notify = _dark_on_notify
+            log("Dark mode menu patch applied")
     except Exception as e:
         log(f"Dark mode patch failed: {e}")
 
