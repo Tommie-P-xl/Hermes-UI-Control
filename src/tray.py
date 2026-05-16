@@ -32,34 +32,11 @@ def _is_system_dark_mode() -> bool:
         return False
 
 
-# Preferred app mode constants for uxtheme
-_APPEARANCE_LIGHT = 0
-_APPEARANCE_DARK = 1
-_APPEARANCE_FOLLOW_SYSTEM = 2
-
+# uxtheme dark mode APIs (Windows 10 1903+)
 _uxtheme = ctypes.windll.uxtheme
-# SetPreferredAppMode — ordinal 135 (Windows 10 1903+)
-_SetPreferredAppMode = _uxtheme[135]
-# FlushMenuThemes — ordinal 136 (Windows 10 1903+)
-_FlushMenuThemes = _uxtheme[136]
-
-
-def _enable_dark_mode_menus():
-    """Enable dark mode for popup menus via uxtheme undocumented APIs."""
-    try:
-        _SetPreferredAppMode(_APPEARANCE_DARK)
-        _FlushMenuThemes()
-    except Exception:
-        pass
-
-
-def _disable_dark_mode_menus():
-    """Restore system-default menu theming."""
-    try:
-        _SetPreferredAppMode(_APPEARANCE_FOLLOW_SYSTEM)
-        _FlushMenuThemes()
-    except Exception:
-        pass
+_SetPreferredAppMode = _uxtheme[135]  # ordinal 135
+_FlushMenuThemes = _uxtheme[136]      # ordinal 136
+DARK_MODE = 1
 
 
 def _apply_dark_mode_to_hwnd(hwnd):
@@ -72,6 +49,15 @@ def _apply_dark_mode_to_hwnd(hwnd):
             ctypes.byref(ctypes.c_int(1)),
             ctypes.sizeof(ctypes.c_int),
         )
+    except Exception:
+        pass
+
+
+def _enable_dark_mode():
+    """Enable dark mode for the app — must be called before UI creation."""
+    try:
+        _SetPreferredAppMode(DARK_MODE)
+        _FlushMenuThemes()
     except Exception:
         pass
 
@@ -436,16 +422,13 @@ def _build_menu():
     return pystray.Menu(*items)
 
 
-WM_RBUTTONUP = 0x0205
-
-
 def _patch_menu_for_dark_mode(icon):
-    """Patch the icon to apply dark mode to popup menus.
+    """Apply dark mode to popup menus.
 
     Strategy:
-    1. Use uxtheme SetPreferredAppMode to enable dark menus at app level
-    2. Apply DWM dark mode to the menu owner window
-    3. Re-apply before each right-click menu show
+    1. Enable dark mode via uxtheme BEFORE any menu creation
+    2. Apply DWM dark mode to icon windows
+    3. Hook _on_notify to re-enable dark mode before each menu show
     """
     if not _is_system_dark_mode():
         return
@@ -453,22 +436,20 @@ def _patch_menu_for_dark_mode(icon):
     try:
         impl = icon._impl
 
-        # Enable dark mode for menus globally
-        _enable_dark_mode_menus()
-
         # Apply DWM dark mode to the icon windows
         if hasattr(impl, '_hwnd') and impl._hwnd:
             _apply_dark_mode_to_hwnd(impl._hwnd)
         if hasattr(impl, '_menu_hwnd') and impl._menu_hwnd:
             _apply_dark_mode_to_hwnd(impl._menu_hwnd)
 
-        # Hook _on_notify to ensure dark mode is applied before each menu show
+        # Hook _on_notify to re-apply dark mode before each menu show
         if hasattr(impl, '_on_notify'):
             original_on_notify = impl._on_notify
+            WM_RBUTTONUP = 0x0205
 
             def _dark_on_notify(wparam, lparam):
                 if lparam == WM_RBUTTONUP:
-                    _enable_dark_mode_menus()
+                    _enable_dark_mode()
                     if impl._menu_hwnd:
                         _apply_dark_mode_to_hwnd(impl._menu_hwnd)
                 return original_on_notify(wparam, lparam)
@@ -482,6 +463,9 @@ def _patch_menu_for_dark_mode(icon):
 def run_tray():
     """Create and run the system tray icon."""
     global _icon
+
+    # Enable dark mode BEFORE creating any UI elements
+    _enable_dark_mode()
 
     initial_icon = _create_status_icon("stopped")
     _icon = pystray.Icon(
