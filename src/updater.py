@@ -1,13 +1,36 @@
-"""Auto-update via GitHub Releases."""
+"""Auto-update via GitHub Releases.
+
+Update flow (inspired by cc-switch):
+1. Try fetching latest.json from release assets for structured metadata
+2. Fall back to GitHub API for version info
+3. Download the new exe with proper redirect handling
+4. Apply update via a batch script that retries on locked files
+"""
 import json
 import os
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.request
 from pathlib import Path
 
-from config import APP_VERSION, UPDATE_CHECK_URL
+from config import APP_VERSION, UPDATE_CHECK_URL, GITHUB_OWNER, GITHUB_REPO
+
+# Structured metadata endpoint (like cc-switch's latest.json)
+LATEST_JSON_URL = (
+    f"https://github.com/{GITHUB_OWNER}/{GITHUB_REPO}"
+    f"/releases/latest/download/latest.json"
+)
+
+
+def _log(msg: str):
+    """Write updater log."""
+    try:
+        from main import log
+        log(f"[updater] {msg}")
+    except Exception:
+        pass
 
 
 def parse_version(v: str) -> tuple:
@@ -17,72 +40,192 @@ def parse_version(v: str) -> tuple:
     return tuple(int(p) for p in parts[:3])
 
 
-def check_for_update() -> dict | None:
-    """Check GitHub for a newer release. Returns release info dict or None."""
+def _fetch_json(url: str, timeout: int = 15) -> dict | None:
+    """Fetch JSON from a URL, handling redirects."""
     try:
-        req = urllib.request.Request(UPDATE_CHECK_URL, headers={"User-Agent": "HermesUIControl"})
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read().decode())
+        req = urllib.request.Request(url, headers={"User-Agent": "HermesUIControl"})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read().decode())
+    except Exception as e:
+        _log(f"Fetch failed for {url}: {e}")
+        return None
 
-        remote_tag = data.get("tag_name", "")
-        remote_ver = parse_version(remote_tag)
-        local_ver = parse_version(APP_VERSION)
 
-        if remote_ver > local_ver:
-            # Find the exe asset
-            asset_url = None
-            for asset in data.get("assets", []):
-                name = asset.get("name", "")
-                if name.endswith(".exe"):
-                    asset_url = asset.get("browser_download_url")
-                    break
-            return {
-                "version": remote_tag,
-                "url": asset_url,
-                "body": data.get("body", ""),
-            }
-    except Exception:
-        pass
+def _find_exe_asset(release: dict) -> str | None:
+    """Find the .exe download URL from release assets."""
+    for asset in release.get("assets", []):
+        name = asset.get("name", "")
+        if name.endswith(".exe"):
+            url = asset.get("browser_download_url", "")
+            if url:
+                return url
     return None
 
 
+def check_for_update() -> dict | None:
+    """Check for a newer release. Returns release info dict or None.
+
+    Strategy (like cc-switch):
+    1. Try latest.json for structured metadata
+    2. Fall back to GitHub Releases API
+    """
+    # Strategy 1: Try latest.json metadata endpoint
+    data = _fetch_json(LATEST_JSON_URL)
+    if data and "version" in data:
+        remote_ver = parse_version(data["version"])
+        local_ver = parse_version(APP_VERSION)
+        if remote_ver > local_ver:
+            exe_url = data.get("url") or data.get("download_url")
+            if not exe_url:
+                exe_url = _find_exe_asset(data)
+            _log(f"Update available via latest.json: {data['version']}")
+            return {
+                "version": data["version"],
+                "url": exe_url,
+                "body": data.get("notes", data.get("body", "")),
+            }
+
+    # Strategy 2: Fall back to GitHub API
+    data = _fetch_json(UPDATE_CHECK_URL)
+    if not data:
+        return None
+
+    remote_tag = data.get("tag_name", "")
+    if not remote_tag:
+        return None
+
+    remote_ver = parse_version(remote_tag)
+    local_ver = parse_version(APP_VERSION)
+
+    if remote_ver > local_ver:
+        exe_url = _find_exe_asset(data)
+        _log(f"Update available via API: {remote_tag}")
+        return {
+            "version": remote_tag,
+            "url": exe_url,
+            "body": data.get("body", ""),
+        }
+
+    _log(f"No update available (local={APP_VERSION}, remote={remote_tag})")
+    return None
+
+
+def _download_file(url: str, dest: Path, timeout: int = 300) -> bool:
+    """Download a file from URL to destination, following redirects."""
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "HermesUIControl"})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            with open(dest, "wb") as f:
+                while True:
+                    chunk = resp.read(8192)
+                    if not chunk:
+                        break
+                    f.write(chunk)
+        return dest.exists() and dest.stat().st_size > 0
+    except Exception as e:
+        _log(f"Download failed: {e}")
+        return False
+
+
 def perform_update(download_url: str) -> bool:
-    """Download new version and replace current exe via a batch script."""
+    """Download new version and replace current exe via a batch script.
+
+    Flow (like cc-switch):
+    1. Download new exe to temp directory
+    2. Write a batch script that:
+       - Waits for the current process to exit
+       - Replaces the old exe (with retry for locked files)
+       - Launches the new version
+       - Cleans up
+    3. Launch the batch script and exit
+    """
     if not download_url:
+        _log("No download URL provided")
         return False
     if not getattr(sys, "frozen", False):
-        return False  # Can only self-update packaged exe
+        _log("Not a packaged exe, cannot self-update")
+        return False
 
     current_exe = Path(sys.executable)
     backup_exe = current_exe.with_suffix(".exe.bak")
-    temp_dir = tempfile.mkdtemp()
-    new_exe = Path(temp_dir) / "HermesUIControl_new.exe"
+    temp_dir = Path(tempfile.mkdtemp(prefix="hermes_update_"))
+    new_exe = temp_dir / "HermesUIControl_new.exe"
 
     try:
-        # Download (follow redirects for GitHub release assets)
-        req = urllib.request.Request(download_url, headers={"User-Agent": "HermesUIControl"})
-        with urllib.request.urlopen(req, timeout=300) as resp:
-            with open(new_exe, "wb") as f:
-                f.write(resp.read())
+        _log(f"Downloading update from: {download_url}")
+        if not _download_file(download_url, new_exe):
+            _log("Download failed or file is empty")
+            return False
 
-        # Write batch script to replace after exit
+        _log(f"Downloaded {new_exe.stat().st_size} bytes")
+
+        # Clean up old backups
+        if backup_exe.exists():
+            try:
+                backup_exe.unlink()
+            except Exception:
+                pass
+
+        pid = os.getpid()
+
+        # Batch script with retry logic for locked files
         bat_content = f"""@echo off
 chcp 65001 >nul
-echo Updating Hermes UI Control...
-taskkill /F /PID {os.getpid()} >nul 2>&1
-timeout /t 2 /nobreak >nul
-move /Y "{current_exe}" "{backup_exe}" >nul 2>&1
+echo ============================================
+echo   Hermes UI Control - Auto Update
+echo ============================================
+echo.
+echo Waiting for application to close...
+
+:: Wait for the current process to exit (up to 10 seconds)
+set /a "count=0"
+:wait_loop
+tasklist /FI "PID eq {pid}" 2>nul | find "{pid}" >nul
+if %errorlevel% equ 0 (
+    if %count% geq 10 (
+        echo Force killing process...
+        taskkill /F /PID {pid} >nul 2>&1
+    ) else (
+        timeout /t 1 /nobreak >nul
+        set /a "count+=1"
+        goto wait_loop
+    )
+)
+
+echo.
+echo Replacing application...
+
+:: Try to replace the exe (retry up to 5 times)
+set /a "retry=0"
+:replace_loop
 move /Y "{new_exe}" "{current_exe}" >nul 2>&1
+if %errorlevel% neq 0 (
+    set /a "retry+=1"
+    if %retry% geq 5 (
+        echo ERROR: Failed to replace application after 5 attempts.
+        echo The file may be locked by another process.
+        pause
+        goto cleanup
+    )
+    echo Retry %retry%/5...
+    timeout /t 1 /nobreak >nul
+    goto replace_loop
+)
+
+echo Update successful!
+echo Starting application...
 start "" "{current_exe}" --minimize
-del /F "{backup_exe}" >nul 2>&1
+
+:cleanup
+if exist "{backup_exe}" del /F "{backup_exe}" >nul 2>&1
 rd /S /Q "{temp_dir}" >nul 2>&1
 del /F "%~f0" >nul 2>&1
 """
-        bat_path = Path(temp_dir) / "update.bat"
+        bat_path = temp_dir / "update.bat"
         with open(bat_path, "w", encoding="utf-8") as f:
             f.write(bat_content)
 
-        # Launch updater and exit
+        _log("Launching update script...")
         subprocess.Popen(
             ["cmd", "/c", str(bat_path)],
             creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NO_WINDOW,
@@ -90,10 +233,15 @@ del /F "%~f0" >nul 2>&1
         return True
 
     except Exception as e:
+        _log(f"Update failed: {type(e).__name__}: {e}")
         # Cleanup on failure
         for p in [new_exe, backup_exe]:
             try:
                 p.unlink(missing_ok=True)
             except Exception:
                 pass
+        try:
+            temp_dir.rmdir()
+        except Exception:
+            pass
         return False

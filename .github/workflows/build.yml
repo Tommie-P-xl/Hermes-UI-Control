@@ -54,8 +54,28 @@ jobs:
           name: HermesUIControl
           path: dist/
 
+      - name: Generate latest.json
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          cat > dist/latest.json <<EOF
+          {
+            "version": "${TAG}",
+            "notes": "Hermes UI Control ${TAG}",
+            "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "platforms": {
+              "windows-x86_64": {
+                "signature": "",
+                "url": "https://github.com/${{ github.repository }}/releases/download/${TAG}/HermesUIControl.exe"
+              }
+            },
+            "url": "https://github.com/${{ github.repository }}/releases/download/${TAG}/HermesUIControl.exe"
+          }
+          EOF
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/HermesUIControl.exe
+          files: |
+            dist/HermesUIControl.exe
+            dist/latest.json
           generate_release_notes: true

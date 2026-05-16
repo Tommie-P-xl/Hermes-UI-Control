@@ -5,6 +5,7 @@ import struct
 import threading
 import time
 import webbrowser
+import winreg
 
 import pystray
 from PIL import Image, ImageDraw
@@ -15,6 +16,46 @@ from main import log
 import autostart
 import updater
 import config as app_config
+
+
+def _is_system_dark_mode() -> bool:
+    """Check if Windows system is using dark mode for apps."""
+    try:
+        key = winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
+        )
+        value, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
+        winreg.CloseKey(key)
+        return value == 0
+    except Exception:
+        return False
+
+
+def _apply_dark_mode_to_menu(hwnd):
+    """Apply dark mode to a popup menu window using DWM API."""
+    try:
+        DWMWA_USE_IMMERSIVE_DARK_MODE = 20
+        ctypes.windll.dwmapi.DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_USE_IMMERSIVE_DARK_MODE,
+            ctypes.byref(ctypes.c_int(1)),
+            ctypes.sizeof(ctypes.c_int),
+        )
+    except Exception:
+        pass
+
+
+def _apply_menu_theme():
+    """Apply system theme to the current popup menu."""
+    if not _is_system_dark_mode():
+        return
+    try:
+        hwnd = ctypes.windll.user32.GetForegroundWindow()
+        if hwnd:
+            _apply_dark_mode_to_menu(hwnd)
+    except Exception:
+        pass
 
 
 def _get_manager():
@@ -377,6 +418,26 @@ def _build_menu():
     return pystray.Menu(*items)
 
 
+def _patch_menu_for_dark_mode(icon):
+    """Patch the icon to apply dark mode to menus when shown."""
+    if not _is_system_dark_mode():
+        return
+
+    try:
+        impl = icon._impl
+        if hasattr(impl, '_show_menu'):
+            original_show = impl._show_menu
+
+            def _dark_show_menu(*args, **kwargs):
+                result = original_show(*args, **kwargs)
+                threading.Timer(0.01, _apply_menu_theme).start()
+                return result
+
+            impl._show_menu = _dark_show_menu
+    except Exception as e:
+        log(f"Dark mode patch failed: {e}")
+
+
 def run_tray():
     """Create and run the system tray icon."""
     global _icon
@@ -388,6 +449,8 @@ def run_tray():
         title=f"{APP_NAME} v{APP_VERSION}\n未运行",
         menu=_build_menu(),
     )
+
+    _patch_menu_for_dark_mode(_icon)
 
     poll_thread = threading.Thread(target=_update_icon_state, daemon=True)
     poll_thread.start()
