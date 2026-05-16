@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 
 APP_NAME = "Hermes UI Control"
-APP_VERSION = "1.0.4"
+APP_VERSION = "1.0.5"
 APP_AUTHOR = "HermesControl"
 
 HERMES_PORT = 8648

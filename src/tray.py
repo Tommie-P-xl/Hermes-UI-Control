@@ -39,9 +39,9 @@ _APPEARANCE_FOLLOW_SYSTEM = 2
 
 _uxtheme = ctypes.windll.uxtheme
 # SetPreferredAppMode — ordinal 135 (Windows 10 1903+)
-_SetPreferredAppMode = getattr(_uxtheme, 135)
+_SetPreferredAppMode = _uxtheme[135]
 # FlushMenuThemes — ordinal 136 (Windows 10 1903+)
-_FlushMenuThemes = getattr(_uxtheme, 136)
+_FlushMenuThemes = _uxtheme[136]
 
 
 def _enable_dark_mode_menus():
